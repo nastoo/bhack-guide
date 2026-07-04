@@ -30,6 +30,8 @@ from core.robot_http import LOOMO_CMD_PATH, RobotHttpClient
 from core.robot_agent import DirectRobotAgent
 from core import robot_profiles
 from core.voice_agent import VoiceAgent
+from core.wake_listener import WakeListener
+from core.wake_word import extract_wake_command
 from core.auth import setup_auth, user_from_websocket
 
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +44,7 @@ navigation_loop: NavigationLoop | None = None
 robot_client: RobotHttpClient | None = None
 voice_agent: VoiceAgent | None = None
 robot_agent: DirectRobotAgent | None = None
+wake_listener: WakeListener | None = None
 _route_task: asyncio.Task | None = None
 _route_stop: asyncio.Event | None = None
 _selected_robot: str = "loomo"
@@ -301,7 +304,7 @@ async def _start_forced_route(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global navigation_loop, robot_client, voice_agent, robot_agent, _main_loop, _route_task, _selected_robot
+    global navigation_loop, robot_client, voice_agent, robot_agent, wake_listener, _main_loop, _route_task, _selected_robot
 
     _main_loop = asyncio.get_running_loop()
     settings = load_settings()
@@ -335,6 +338,24 @@ async def lifespan(app: FastAPI):
         robot_id=_selected_robot,
         profile=initial_profile,
     )
+
+    async def _wake_on_command(command: str) -> dict:
+        if voice_agent is None:
+            return {"reply": "Voice agent not ready."}
+        return await voice_agent.handle(command)
+
+    wake_cfg = settings.get("wake_word") or {}
+    wake_listener = WakeListener(
+        robot_client,
+        on_command=_wake_on_command,
+        on_event=broadcast,
+        poll_interval_sec=float(wake_cfg.get("poll_interval_sec", 0.4)),
+        capture_duration_sec=float(wake_cfg.get("capture_duration_sec", 2.0)),
+        cooldown_sec=float(wake_cfg.get("cooldown_sec", 3.0)),
+    )
+    if _as_bool(wake_cfg.get("auto_start", False)) and not _as_bool(robot_cfg.get("simulated", True)):
+        await wake_listener.start()
+
     from core import gps_navigation
 
     nav = settings.get("navigation") or {}
@@ -362,6 +383,8 @@ async def lifespan(app: FastAPI):
         api_cfg.get("model", "chat-vl-large"),
     )
     yield
+    if wake_listener is not None:
+        await wake_listener.stop()
     await _cancel_route_task()
     if navigation_loop is not None:
         navigation_loop.stop()
@@ -395,6 +418,11 @@ class AgentListenRequest(BaseModel):
     duration: float = 5.0
     force_route: bool = False
     route_text: str | None = None
+    require_wake_word: bool = True
+
+
+class WakeListenerRequest(BaseModel):
+    enabled: bool = True
 
 
 class RobotSelectRequest(BaseModel):
@@ -720,11 +748,62 @@ async def api_agent_listen(body: AgentListenRequest):
     from core.api_client import transcribe_audio
 
     heard = await asyncio.get_event_loop().run_in_executor(None, transcribe_audio, wav)
+    heard = (heard or "").strip()
+    if not heard:
+        return {"ok": False, "heard": "", "reply": "I did not hear anything."}
+
+    command = heard
+    wake_reason = ""
+    if body.require_wake_word:
+        command, wake_reason = extract_wake_command(heard)
+        if command is None:
+            return {
+                "ok": True,
+                "heard": heard,
+                "reply": f'Say "Hi Loomo" first — e.g. "Hi Loomo, take me to the station". ({wake_reason})',
+                "wake_triggered": False,
+            }
+
     if body.force_route and body.route_text and body.route_text.strip():
-        result = await _start_forced_route(body.route_text, user_message=heard)
-        return {"ok": True, "heard": heard, **result}
-    result = await voice_agent.handle(heard)
-    return {"ok": True, **result}
+        result = await _start_forced_route(body.route_text, user_message=command)
+        return {"ok": True, "heard": heard, "command": command, "wake_triggered": True, **result}
+    result = await voice_agent.handle(command)
+    return {"ok": True, "command": command, "wake_triggered": True, **result}
+
+
+@app.get("/api/agent/wake")
+def api_agent_wake_status():
+    if wake_listener is None:
+        raise HTTPException(status_code=503, detail="Wake listener not ready")
+    state = wake_listener.state
+    return {
+        "ok": True,
+        "running": wake_listener.running,
+        "last_transcript": state.last_transcript,
+        "last_command": state.last_command,
+        "last_reply": state.last_reply,
+        "last_status": state.last_status,
+        "triggers": state.triggers,
+        "ignored": state.ignored,
+        "errors": state.errors,
+        "phrase": "hi loomo",
+    }
+
+
+@app.post("/api/agent/wake")
+async def api_agent_wake_toggle(body: WakeListenerRequest):
+    if wake_listener is None or robot_client is None:
+        raise HTTPException(status_code=503, detail="Wake listener not ready")
+    if robot_client.simulated:
+        raise HTTPException(
+            status_code=501,
+            detail='Always-on wake word requires ROBOT_SIMULATED=false. Say "Hi Loomo, …" on the robot mic.',
+        )
+    if body.enabled:
+        await wake_listener.start()
+    else:
+        await wake_listener.stop()
+    return {"ok": True, "running": wake_listener.running}
 
 
 @app.get("/api/test")
