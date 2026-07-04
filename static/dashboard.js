@@ -114,7 +114,7 @@ if (chatForm) {
     if (!message) return;
     const result = await api("/api/agent/chat", {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...getForceRouteOptions() }),
     });
     agentReplyEl.textContent = result.reply || result.heard || "No reply";
     chatInput.value = "";
@@ -128,7 +128,7 @@ if (listenBtn) {
     try {
       const result = await api("/api/agent/listen", {
         method: "POST",
-        body: JSON.stringify({ duration: 5 }),
+        body: JSON.stringify({ duration: 5, ...getForceRouteOptions() }),
       });
       agentReplyEl.textContent = result.heard
         ? `Heard: "${result.heard}" — ${result.reply}`

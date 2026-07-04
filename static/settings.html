@@ -47,6 +47,22 @@
             <small>Direct natural-language robot control page</small>
           </span>
         </label>
+        <label class="settings-toggle">
+          <input name="force_robot_route" type="checkbox" />
+          <span class="settings-toggle-text">
+            <strong>Force robot route</strong>
+            <small>Ignore LLM interpretation — always run the preset route below when the robot is asked anything</small>
+          </span>
+        </label>
+        <div class="settings-route-field" data-force-route-field hidden>
+          <label for="force_robot_route_text">Preset route (one step per line)</label>
+          <textarea
+            id="force_robot_route_text"
+            name="force_robot_route_text"
+            rows="6"
+            placeholder="go straight for 5m&#10;turn left&#10;go straight for 3m"
+          ></textarea>
+        </div>
       </form>
       <div class="guide-form settings-actions">
         <button id="feature-settings-reset" type="button">Reset to defaults</button>

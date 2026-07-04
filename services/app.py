@@ -24,6 +24,7 @@ from core.audio_test import AudioTestRunner
 from core import gps_stream_client
 from core.motion_test import MotionTestRunner, VALID_DIRECTIONS
 from core import manual_route
+from core.gps_motion import linear_speed_kmh, linear_speed_ms
 from core.navigation_loop import NavigationLoop
 from core.robot_http import LOOMO_CMD_PATH, RobotHttpClient
 from core.robot_agent import DirectRobotAgent
@@ -251,6 +252,53 @@ async def _run_route_background(
     )
 
 
+async def _start_forced_route(
+    route_text: str,
+    *,
+    user_message: str = "",
+    name: str = "Forced route",
+) -> dict:
+    """Parse and run a preset route, ignoring whatever the user asked."""
+    global _route_task
+
+    settings = load_settings()
+    try:
+        commands, parser = _parse_manual_commands(
+            route_text=route_text,
+            steps=None,
+            settings=settings,
+        )
+    except ValueError as exc:
+        return {"reply": str(exc), "steps": 0, "forced": True, "error": str(exc)}
+
+    total_distance, summary = manual_route.summarize_route(commands)
+    await _cancel_route_task()
+    _route_task = asyncio.create_task(
+        _run_route_background(
+            name,
+            commands,
+            total_distance=total_distance,
+            summary=summary,
+            speak=True,
+        )
+    )
+
+    preview = user_message.strip() or "your request"
+    reply = (
+        f"Force route enabled — running preset route ({len(commands)} steps, {total_distance}) "
+        f"instead of: {preview!r}. Plan: {summary}"
+    )
+    return {
+        "reply": reply,
+        "steps": len(commands),
+        "parser": parser,
+        "summary": summary,
+        "forced": True,
+        "speed_kmh": linear_speed_kmh(settings),
+        "speed_ms": round(linear_speed_ms(settings), 3),
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global navigation_loop, robot_client, voice_agent, robot_agent, _main_loop, _route_task, _selected_robot
@@ -339,10 +387,14 @@ class ManualNavigationRequest(BaseModel):
 
 class AgentChatRequest(BaseModel):
     message: str
+    force_route: bool = False
+    route_text: str | None = None
 
 
 class AgentListenRequest(BaseModel):
     duration: float = 5.0
+    force_route: bool = False
+    route_text: str | None = None
 
 
 class RobotSelectRequest(BaseModel):
@@ -352,6 +404,8 @@ class RobotSelectRequest(BaseModel):
 class RobotChatRequest(BaseModel):
     message: str
     reset: bool = False
+    force_route: bool = False
+    route_text: str | None = None
 
 
 class RobotRouteRequest(BaseModel):
@@ -621,6 +675,9 @@ async def api_navigation_stop():
 async def api_agent_chat(body: AgentChatRequest):
     if voice_agent is None:
         raise HTTPException(status_code=503, detail="Voice agent not ready")
+    if body.force_route and body.route_text and body.route_text.strip():
+        result = await _start_forced_route(body.route_text, user_message=body.message)
+        return {"ok": True, "heard": body.message, **result}
     result = await voice_agent.handle(body.message)
     return {"ok": True, **result}
 
@@ -629,6 +686,11 @@ async def api_agent_chat(body: AgentChatRequest):
 async def api_robot_chat(body: RobotChatRequest):
     if robot_agent is None:
         raise HTTPException(status_code=503, detail="Robot agent not ready")
+    if body.force_route and body.route_text and body.route_text.strip():
+        if body.reset:
+            robot_agent.reset_history()
+        result = await _start_forced_route(body.route_text, user_message=body.message)
+        return {"ok": True, **result}
     result = await robot_agent.handle(body.message, reset=body.reset)
     return {"ok": True, **result}
 
@@ -658,6 +720,9 @@ async def api_agent_listen(body: AgentListenRequest):
     from core.api_client import transcribe_audio
 
     heard = await asyncio.get_event_loop().run_in_executor(None, transcribe_audio, wav)
+    if body.force_route and body.route_text and body.route_text.strip():
+        result = await _start_forced_route(body.route_text, user_message=heard)
+        return {"ok": True, "heard": heard, **result}
     result = await voice_agent.handle(heard)
     return {"ok": True, **result}
 

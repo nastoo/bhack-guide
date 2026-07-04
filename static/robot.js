@@ -48,7 +48,7 @@ chatForm.addEventListener("submit", async (event) => {
   try {
     const result = await api("/api/robot/chat", {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...getForceRouteOptions() }),
     });
     const meta = result.steps
       ? `Tools used: ${result.steps} · speed ${result.speed_kmh} km/h`
