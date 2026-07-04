@@ -1,0 +1,77 @@
+service:
+  host: "0.0.0.0"
+  port: 8001
+
+api:
+  base_url: "${NAV_API_BASE_URL:-https://models.mylab.th-luebeck.dev/v1}"
+  api_key: "${NAV_API_KEY:-none}"
+  model: "${NAV_LLM_MODEL:-chat-vl-large}"
+  stt_model: "${NAV_STT_MODEL:-whisper-3-large}"
+  tts_model: "${NAV_TTS_MODEL:-xtts-v2}"
+
+robot:
+  # Legacy fallback when robots.profiles not used
+  api: "${ROBOT_API:-auto}"
+  base_url: "${ROBOT_BASE_URL:-https://go1.cphs.mylab.th-luebeck.de}"
+  simulated: "${ROBOT_SIMULATED:-true}"
+
+# Multi-robot: UI select + LLM OpenAPI context per robot
+robots:
+  default: "${ROBOT_DEFAULT:-loomo}"
+  profiles:
+    go1:
+      label: "Dog (Go1)"
+      api: go1
+      base_url: "${ROBOT_GO1_URL:-https://go1.cphs.mylab.th-luebeck.de}"
+      spec: robot_openapi.json
+    loomo:
+      label: "Loomo"
+      api: loomo
+      base_url: "${ROBOT_LOOMO_URL:-https://loomo.cphs.mylab.th-luebeck.de}"
+      spec: loomo_openapi.json
+
+google_maps:
+  api_key: "${GOOGLE_MAPS_API_KEY}"
+
+navigation:
+  origin_lat: 53.83669116593331
+  origin_lng: 10.698750087203852
+  origin_label: "home"
+  # Compass heading the robot faces at origin (0°=north, 90°=east, 300°=WNW)
+  origin_heading_deg: 275
+  heading_tolerance_deg: 15
+  language: en
+  simulate_progress: false
+  step_pause_seconds: 2.0
+  # Route from Google Maps Directions API → distance-based motion (default)
+  use_live_gps: false
+  min_forward_m: 3
+  turn_duration_sec: 3.0
+  uturn_duration_sec: 6.0
+  max_forward_duration_sec: 300
+  gps_speed_kmh: 3
+  gps_angular_speed: 0.55
+  # Live phone GPS (experimental — set use_live_gps: true)
+  gps_stream_url: "${GPS_STREAM_URL:-http://localhost:8080}"
+  gps_token: "${GPS_TOKEN:-}"
+  gps_access_password: "${GPS_ACCESS_PASSWORD:-}"
+  gps_max_age_sec: 20
+  gps_arrival_radius_m: 10
+  gps_turn_tolerance_deg: 30
+  gps_step_timeout_sec: 120
+  gps_poll_interval_sec: 0.5
+
+# Direct LLM robot chat (/robot) — distance-based moves use navigation.gps_speed_kmh
+robot_agent:
+  max_distance_m: 200
+  max_duration_sec: 300
+  max_turn_deg: 360
+
+# Safe caps for in-room motion tests (/api/test/move, --test move)
+motion_test:
+  duration_sec: 1.2
+  linear_speed: 0.25
+  angular_speed: 0.55
+  max_duration_sec: 2.5
+  max_linear_speed: 0.35
+  max_angular_speed: 0.8

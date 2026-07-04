@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Robot Test — LLM Navigation</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Robot hardware test</h1>
+    <p class="subtitle">Safe in-room checks — short moves, speak, listen (requires ROBOT_SIMULATED=false)</p>
+    <p class="hint"><a href="/">← Back to navigation</a></p>
+  </header>
+
+  <main>
+    <section class="panel hero">
+      <h2>Motion — short nudge</h2>
+      <p class="hint">Capped at ~2.5s and low speed. Always stops after each move.</p>
+      <form id="move-form" class="guide-form">
+        <select id="move-direction">
+          <option value="forward">Forward</option>
+          <option value="backward">Backward</option>
+          <option value="turn_left">Turn left</option>
+          <option value="turn_right">Turn right</option>
+        </select>
+        <input id="move-duration" type="number" min="0.3" max="2.5" step="0.1" value="1.2" title="seconds" />
+        <button type="submit">Nudge</button>
+      </form>
+      <div class="guide-form">
+        <button id="patrol-btn" type="button">Patrol (small loop)</button>
+        <button id="stop-btn" type="button">Emergency stop</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Speak (POST /api/cmd)</h2>
+      <form id="speak-form" class="guide-form">
+        <input id="speak-text" type="text" value="Hello, this is a speaker test." required />
+        <button type="submit">Test speak</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Listen (mic → Whisper)</h2>
+      <form id="listen-form" class="guide-form">
+        <input id="listen-duration" type="number" min="1" max="30" value="5" />
+        <button type="submit">Test listen</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Echo (mic → Whisper → speak)</h2>
+      <form id="echo-form" class="guide-form">
+        <input id="echo-duration" type="number" min="1" max="30" value="5" />
+        <button type="submit">Test echo</button>
+      </form>
+    </section>
+
+    <section class="panel speech-panel">
+      <h2>Result</h2>
+      <pre id="output" class="speech">Run a test above.</pre>
+    </section>
+  </main>
+
+  <script>
+    const output = document.getElementById("output");
+
+    async function runTest(path, body = {}) {
+      output.textContent = "Running…";
+      try {
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = String(err);
+      }
+    }
+
+    document.getElementById("move-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      runTest("/api/test/move", {
+        direction: document.getElementById("move-direction").value,
+        duration_sec: Number(document.getElementById("move-duration").value),
+        linear_speed: 0.25,
+        angular_speed: 0.55,
+      });
+    });
+
+    document.getElementById("patrol-btn").addEventListener("click", () => runTest("/api/test/patrol"));
+    document.getElementById("stop-btn").addEventListener("click", () => runTest("/api/test/stop"));
+
+    document.getElementById("speak-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      runTest("/api/test/speak", { text: document.getElementById("speak-text").value });
+    });
+    document.getElementById("listen-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      runTest("/api/test/listen", { duration: Number(document.getElementById("listen-duration").value) });
+    });
+    document.getElementById("echo-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      runTest("/api/test/echo", { duration: Number(document.getElementById("echo-duration").value) });
+    });
+  </script>
+</body>
+</html>

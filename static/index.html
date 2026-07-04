@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Robot Navigation</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LLM Robot Navigation</h1>
+    <p class="subtitle">GPS turn-by-turn → LLM plans robot HTTP calls (OpenAPI) → move + speak in parallel</p>
+    <p class="hint">
+      <label for="robot-select">Robot:</label>
+      <select id="robot-select" aria-label="Select robot">
+        <option value="loomo">Loomo</option>
+        <option value="go1">Dog (Go1)</option>
+      </select>
+      <span id="robot-meta">Loading…</span>
+      · <a href="/robot">Direct robot chat (LLM)</a>
+      · <a href="/test">Audio test (Whisper + speaker)</a>
+    </p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Talk to the navigator</h2>
+      <form id="chat-form" class="guide-form">
+        <input id="chat-input" type="text" placeholder='Try: "Take me to Lübeck Hauptbahnhof"' required />
+        <button type="submit">Send to LLM</button>
+        <button id="listen-btn" type="button">Listen (robot mic)</button>
+      </form>
+      <p id="agent-reply" class="speech">LLM replies appear here.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Manual route</h2>
+      <p class="hint">One step per line (e.g. <code>go straight for 50m</code>). Speaks each step, then moves.</p>
+      <form id="manual-form" class="manual-form" onsubmit="return false;">
+        <input id="manual-name" type="text" placeholder="Route name" value="My route" />
+        <textarea id="manual-route" rows="6">go straight for 5m
+turn left
+go straight for 3m</textarea>
+        <label class="speak-toggle">
+          <input id="manual-speak" type="checkbox" checked />
+          Speak steps on robot (TTS)
+        </label>
+        <div class="guide-form">
+          <button id="manual-run-btn" type="submit">Run manual route</button>
+          <button id="manual-stop-btn" type="button">Stop</button>
+        </div>
+      </form>
+      <p id="manual-preview" class="hint"></p>
+    </section>
+
+    <section class="panel hero">
+      <h2>GPS navigation</h2>
+      <form id="nav-form" class="guide-form">
+        <input id="dest-input" type="text" placeholder="Destination name or address" required />
+        <button type="submit">Navigate</button>
+        <button id="stop-btn" type="button">Stop</button>
+      </form>
+    </section>
+
+    <section class="stats">
+      <div class="card"><span class="label">Status</span><span id="status" class="value">idle</span></div>
+      <div class="card"><span class="label">Destination</span><span id="destination" class="value">—</span></div>
+      <div class="card"><span class="label">Step</span><span id="step" class="value">—</span></div>
+      <div class="card"><span class="label">Route</span><span id="route-info" class="value">—</span></div>
+    </section>
+
+    <section class="panel speech-panel">
+      <h2>Current instruction</h2>
+      <p id="instruction" class="speech">Ready when you are.</p>
+      <p id="last-speech" class="hint"></p>
+      <p id="last-http" class="hint"></p>
+      <p id="message" class="hint"></p>
+    </section>
+  </main>
+
+  <footer><span id="connection">Connecting…</span></footer>
+  <script src="/static/robots.js"></script>
+  <script src="/static/dashboard.js?v=5"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+services:
+  guide:
+    build: .
+    container_name: guide
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      # Host must match exactly what you open in the browser (see TRAEFIK_HOST in .env)
+      - "traefik.http.routers.guide.rule=Host(`${TRAEFIK_HOST}`)"
+      - "traefik.http.routers.guide.entrypoints=websecure"
+      - "traefik.http.routers.guide.tls=true"
+      - "traefik.http.routers.guide.tls.certresolver=${CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.guide.tls.domains[0].main=${TRAEFIK_HOST}"
+      - "traefik.http.services.guide.loadbalancer.server.port=8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  traefik_proxy:
+    external: true

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Direct Robot Chat — LLM</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Direct robot chat</h1>
+    <p class="subtitle">Tell the robot what to do — distance moves use configured speed (e.g. 50 m at 3 km/h ≈ 60 s)</p>
+    <p class="hint">
+      <a href="/">← Navigation</a>
+      · <a href="/test">Hardware tests</a>
+      · <label for="robot-select">Robot:</label>
+      <select id="robot-select" aria-label="Select robot">
+        <option value="loomo">Loomo</option>
+        <option value="go1">Dog (Go1)</option>
+      </select>
+      · <span id="robot-meta">Loading…</span>
+    </p>
+  </header>
+
+  <main>
+    <section class="panel chat-panel">
+      <div id="chat-log" class="chat-log">
+        <div class="chat-msg assistant">
+          <span class="role">Robot</span>
+          <p>Try: "Go straight for 50 metres" or "Turn left 90 degrees then say hello."</p>
+        </div>
+      </div>
+      <form id="chat-form" class="guide-form">
+        <input id="chat-input" type="text" placeholder='e.g. "Go straight for 50m"' required autocomplete="off" />
+        <button type="submit">Send</button>
+        <button id="reset-btn" type="button">Clear chat</button>
+      </form>
+    </section>
+  </main>
+
+  <footer><span id="status">Ready</span></footer>
+  <script src="/static/robots.js"></script>
+  <script src="/static/robot.js?v=2"></script>
+</body>
+</html>

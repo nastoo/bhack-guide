@@ -1,0 +1,50 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LoomoAgent REST API",
+    "description": "Segway Loomo control via LoomoAgent HTTP proxy. Replace this file with the full spec when available.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/": {
+      "get": {
+        "summary": "Status",
+        "description": "Robot status / health check.",
+        "operationId": "status"
+      }
+    },
+    "/api/cmd": {
+      "post": {
+        "summary": "Robot command",
+        "description": "Send speak, move, or stop. Move is continuous until stop or a new move.",
+        "operationId": "cmd",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cmd": {
+                    "type": "string",
+                    "enum": ["speak", "move", "stop"]
+                  },
+                  "text": { "type": "string", "description": "For cmd=speak" },
+                  "linear": { "type": "number", "description": "Forward/back -1..1 for cmd=move" },
+                  "angular": { "type": "number", "description": "Turn rate -1..1 for cmd=move" }
+                },
+                "required": ["cmd"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audio.wav": {
+      "get": {
+        "summary": "Capture microphone",
+        "description": "~2s 16kHz mono WAV from robot mic.",
+        "operationId": "audio_wav"
+      }
+    }
+  }
+}
