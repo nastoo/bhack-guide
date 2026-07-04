@@ -1,0 +1,84 @@
+name: Deploy to server
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPLOY_PATH: /home/nathan/guide
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare deploy directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: mkdir -p ${{ env.DEPLOY_PATH }}
+
+      - name: Copy project files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "docker-compose.yml,Dockerfile,requirements.txt,.dockerignore,launch.py,core,configs,services,static"
+          target: ${{ env.DEPLOY_PATH }}
+          overwrite: true
+
+      - name: Deploy with Docker Compose
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          TRAEFIK_HOST: ${{ vars.TRAEFIK_HOST }}
+          CERT_RESOLVER: ${{ vars.CERT_RESOLVER }}
+          NAV_API_KEY: ${{ secrets.NAV_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          NAV_API_BASE_URL: ${{ vars.NAV_API_BASE_URL }}
+          NAV_LLM_MODEL: ${{ vars.NAV_LLM_MODEL }}
+          ROBOT_SIMULATED: ${{ vars.ROBOT_SIMULATED }}
+          GPS_STREAM_URL: ${{ vars.GPS_STREAM_URL }}
+          GPS_TOKEN: ${{ secrets.GPS_TOKEN }}
+          GPS_ACCESS_PASSWORD: ${{ secrets.GPS_ACCESS_PASSWORD }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: TRAEFIK_HOST,CERT_RESOLVER,NAV_API_KEY,GOOGLE_MAPS_API_KEY,NAV_API_BASE_URL,NAV_LLM_MODEL,ROBOT_SIMULATED,GPS_STREAM_URL,GPS_TOKEN,GPS_ACCESS_PASSWORD
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ${{ env.DEPLOY_PATH }}
+
+            printf 'TRAEFIK_HOST=%s\nCERT_RESOLVER=%s\nNAV_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\nNAV_API_BASE_URL=%s\nNAV_LLM_MODEL=%s\nROBOT_SIMULATED=%s\nGPS_STREAM_URL=%s\nGPS_TOKEN=%s\nGPS_ACCESS_PASSWORD=%s\nPORT=8001\n' \
+              "${TRAEFIK_HOST:-guide.moln.nasto.ovh}" \
+              "${CERT_RESOLVER:-letsencrypt}" \
+              "${NAV_API_KEY:-none}" \
+              "${GOOGLE_MAPS_API_KEY:-}" \
+              "${NAV_API_BASE_URL:-https://models.mylab.th-luebeck.dev/v1}" \
+              "${NAV_LLM_MODEL:-chat-vl-large}" \
+              "${ROBOT_SIMULATED:-true}" \
+              "${GPS_STREAM_URL:-}" \
+              "${GPS_TOKEN:-}" \
+              "${GPS_ACCESS_PASSWORD:-}" > .env
+
+            docker compose up -d --build --remove-orphans
+            docker image prune -f
+
+            echo "Deployment complete:"
+            docker compose ps
