@@ -8,7 +8,7 @@ import os
 from base64 import b64decode
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 import itsdangerous
 from authlib.integrations.starlette_client import OAuth
@@ -20,9 +20,11 @@ from starlette.middleware.sessions import SessionMiddleware
 logger = logging.getLogger(__name__)
 
 SESSION_USER_KEY = "user"
+SESSION_ID_TOKEN_KEY = "oidc_id_token"
 SESSION_MAX_AGE_SEC = 14 * 24 * 3600
-PUBLIC_PATHS = frozenset({"/health"})
+PUBLIC_PATHS: frozenset[str] = frozenset()
 PUBLIC_PREFIXES = ("/auth/", "/static/")
+LOCAL_HOSTS = frozenset({"127.0.0.1", "::1"})
 
 oauth = OAuth()
 
@@ -184,6 +186,11 @@ def is_public_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES)
 
 
+def is_local_request(request: Request) -> bool:
+    client = request.client
+    return bool(client and client.host in LOCAL_HOSTS)
+
+
 def current_user(request: Request) -> dict[str, Any] | None:
     user = request.session.get(SESSION_USER_KEY)
     return user if isinstance(user, dict) else None
@@ -230,10 +237,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not self.auth.enabled or is_public_path(request.url.path):
             return await call_next(request)
 
+        # Allow container healthchecks (docker-compose hits 127.0.0.1 directly).
+        if request.url.path == "/health" and is_local_request(request):
+            return await call_next(request)
+
         if current_user(request):
             return await call_next(request)
 
-        if request.url.path.startswith("/api/") or request.url.path == "/ws":
+        if request.url.path.startswith("/api/") or request.url.path in ("/ws", "/health"):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
 
         next_path = quote(request.url.path)
@@ -249,6 +260,27 @@ def _normalize_user(userinfo: dict[str, Any]) -> dict[str, Any]:
         "name": userinfo.get("name") or userinfo.get("preferred_username") or userinfo.get("email"),
         "preferred_username": userinfo.get("preferred_username"),
     }
+
+
+def _append_query(url: str, params: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(params)
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _logout_redirect_url(auth: AuthSettings, id_token: str | None) -> str | None:
+    metadata = oauth.oidc.load_server_metadata()
+    end_session = metadata.get("end_session_endpoint")
+    if not end_session:
+        return None
+    params = {
+        "client_id": auth.client_id,
+        "post_logout_redirect_uri": f"{auth.base_url}/",
+    }
+    if id_token:
+        params["id_token_hint"] = id_token
+    return _append_query(end_session, params)
 
 
 def setup_auth(app: FastAPI, settings: dict | None = None) -> AuthSettings:
@@ -318,6 +350,9 @@ def setup_auth(app: FastAPI, settings: dict | None = None) -> AuthSettings:
             raise HTTPException(status_code=400, detail="OIDC provider returned no user info")
 
         request.session[SESSION_USER_KEY] = _normalize_user(userinfo)
+        id_token = token.get("id_token")
+        if isinstance(id_token, str) and id_token:
+            request.session[SESSION_ID_TOKEN_KEY] = id_token
         next_path = request.session.pop("auth_next", "/") or "/"
         if not next_path.startswith("/"):
             next_path = "/"
@@ -325,13 +360,20 @@ def setup_auth(app: FastAPI, settings: dict | None = None) -> AuthSettings:
 
     @app.get("/auth/logout")
     async def auth_logout(request: Request):
+        id_token = request.session.get(SESSION_ID_TOKEN_KEY)
+        if not isinstance(id_token, str):
+            id_token = None
         request.session.clear()
-        metadata = oauth.oidc.load_server_metadata()
-        end_session = metadata.get("end_session_endpoint")
-        if end_session:
-            params = f"post_logout_redirect_uri={quote(auth.base_url + '/', safe='')}"
-            separator = "&" if "?" in end_session else "?"
-            return RedirectResponse(url=f"{end_session}{separator}{params}")
+
+        try:
+            logout_url = _logout_redirect_url(auth, id_token)
+        except Exception:
+            logger.exception("OIDC logout failed to build end-session URL")
+            return RedirectResponse(url="/")
+
+        if logout_url:
+            logger.info("OIDC logout redirect (id_token_hint=%s)", "yes" if id_token else "no")
+            return RedirectResponse(url=logout_url)
         return RedirectResponse(url="/")
 
     logger.info(
