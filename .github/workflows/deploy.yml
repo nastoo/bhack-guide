@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure SSH key
+      - name: Validate SSH key secret
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
@@ -30,22 +30,17 @@ jobs:
             echo "::error::SSH_PRIVATE_KEY is empty. Add it under Settings → Environments → prod → Secrets (or repository secrets)."
             exit 1
           fi
-          umask 077
-          key_file="${RUNNER_TEMP}/deploy_key"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
-          chmod 600 "$key_file"
-          if ! ssh-keygen -y -f "$key_file" > /dev/null 2>&1; then
+          if ! printf '%s\n' "$SSH_PRIVATE_KEY" | ssh-keygen -y -f /dev/stdin > /dev/null 2>&1; then
             echo "::error::SSH_PRIVATE_KEY is not a valid private key. Paste the full key including -----BEGIN ... PRIVATE KEY----- and -----END ... PRIVATE KEY----- lines, with line breaks preserved (no quotes)."
             exit 1
           fi
-          echo "SSH_KEY_PATH=$key_file" >> "$GITHUB_ENV"
 
       - name: Prepare deploy directory
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: ${{ env.SSH_KEY_PATH }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           script: mkdir -p ${{ env.DEPLOY_PATH }}
 
@@ -54,7 +49,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: ${{ env.SSH_KEY_PATH }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           source: "docker-compose.yml,Dockerfile,requirements.txt,.dockerignore,launch.py,core,configs,services,static"
           target: ${{ env.DEPLOY_PATH }}
@@ -81,7 +76,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: ${{ env.SSH_KEY_PATH }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           envs: TRAEFIK_HOST,CERT_RESOLVER,NAV_API_KEY,GOOGLE_MAPS_API_KEY,NAV_API_BASE_URL,NAV_LLM_MODEL,ROBOT_SIMULATED,GPS_STREAM_URL,GPS_TOKEN,GPS_ACCESS_PASSWORD,OIDC_ENABLED,OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET,SESSION_SECRET
           script_stop: true
