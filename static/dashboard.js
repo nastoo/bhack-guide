@@ -13,6 +13,8 @@ const stopBtn = document.getElementById("stop-btn");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const listenBtn = document.getElementById("listen-btn");
+const wakeBtn = document.getElementById("wake-btn");
+const wakeStatusEl = document.getElementById("wake-status");
 const agentReplyEl = document.getElementById("agent-reply");
 const manualForm = document.getElementById("manual-form");
 const manualNameInput = document.getElementById("manual-name");
@@ -124,21 +126,65 @@ if (chatForm) {
 if (listenBtn) {
   listenBtn.addEventListener("click", async () => {
     listenBtn.disabled = true;
-    agentReplyEl.textContent = "Listening…";
+    agentReplyEl.textContent = 'Listening… say "Hi Loomo, …"';
     try {
       const result = await api("/api/agent/listen", {
         method: "POST",
-        body: JSON.stringify({ duration: 5, ...getForceRouteOptions() }),
+        body: JSON.stringify({ duration: 5, require_wake_word: true, ...getForceRouteOptions() }),
       });
-      agentReplyEl.textContent = result.heard
-        ? `Heard: "${result.heard}" — ${result.reply}`
-        : result.reply || "No speech detected";
+      if (result.wake_triggered === false) {
+        agentReplyEl.textContent = result.reply || `Heard "${result.heard}" — wake phrase not detected.`;
+      } else {
+        agentReplyEl.textContent = result.command
+          ? `Command: "${result.command}" — ${result.reply}`
+          : result.reply || "No speech detected";
+      }
     } catch (error) {
       agentReplyEl.textContent = error.message;
     } finally {
       listenBtn.disabled = false;
     }
   });
+}
+
+function updateWakeUi(running, statusText = "") {
+  if (!wakeBtn) return;
+  wakeBtn.setAttribute("aria-pressed", running ? "true" : "false");
+  wakeBtn.textContent = running ? "Stop Hi Loomo listener" : "Always listen: Hi Loomo";
+  if (wakeStatusEl) {
+    wakeStatusEl.textContent = statusText;
+  }
+}
+
+async function refreshWakeStatus() {
+  if (!wakeBtn) return;
+  try {
+    const status = await api("/api/agent/wake");
+    const detail = status.last_status ? ` · ${status.last_status}` : "";
+    updateWakeUi(status.running, status.running ? `Listening for "Hi Loomo"${detail}` : "");
+  } catch {
+    updateWakeUi(false, "");
+  }
+}
+
+if (wakeBtn) {
+  wakeBtn.addEventListener("click", async () => {
+    wakeBtn.disabled = true;
+    try {
+      const status = await api("/api/agent/wake");
+      const next = !status.running;
+      await api("/api/agent/wake", {
+        method: "POST",
+        body: JSON.stringify({ enabled: next }),
+      });
+      updateWakeUi(next, next ? 'Listening for "Hi Loomo"…' : "Wake listener stopped.");
+    } catch (error) {
+      agentReplyEl.textContent = error.message;
+    } finally {
+      wakeBtn.disabled = false;
+    }
+  });
+  refreshWakeStatus();
 }
 
 function connect() {
@@ -152,6 +198,20 @@ function connect() {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "navigation_update") applyUpdate(data);
+    if (data.type === "wake_listener") {
+      if (data.status === "triggered" && data.command) {
+        agentReplyEl.textContent = `Heard: "${data.heard}" → "${data.command}"`;
+      }
+      if (data.status === "replied" && data.reply) {
+        agentReplyEl.textContent = `Command: "${data.command}" — ${data.reply}`;
+      }
+      if (wakeStatusEl) {
+        const base = wakeBtn && wakeBtn.getAttribute("aria-pressed") === "true"
+          ? 'Listening for "Hi Loomo"'
+          : "";
+        wakeStatusEl.textContent = base && data.status ? `${base} · ${data.status}` : base;
+      }
+    }
   };
 }
 

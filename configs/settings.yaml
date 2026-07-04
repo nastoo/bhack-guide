@@ -79,6 +79,13 @@ robot_agent:
   max_duration_sec: 300
   max_turn_deg: 360
 
+# Siri-style wake phrase on robot mic ("Hi Loomo, …" → command to LLM)
+wake_word:
+  auto_start: "${WAKE_WORD_AUTO_START:-false}"
+  poll_interval_sec: 0.4
+  capture_duration_sec: 2.0
+  cooldown_sec: 3.0
+
 # Safe caps for in-room motion tests (/api/test/move, --test move)
 motion_test:
   duration_sec: 1.2

@@ -28,10 +28,13 @@
     <section class="panel" data-feature="navigator">
       <h2>Talk to the navigator</h2>
       <form id="chat-form" class="guide-form">
-        <input id="chat-input" type="text" placeholder='Try: "Take me to Lübeck Hauptbahnhof"' required />
+        <input id="chat-input" type="text" placeholder='Try: "Hi Loomo, take me to Lübeck Hauptbahnhof"' required />
         <button type="submit">Send to LLM</button>
-        <button id="listen-btn" type="button">Listen (robot mic)</button>
+        <button id="listen-btn" type="button">Listen once (robot mic)</button>
+        <button id="wake-btn" type="button" aria-pressed="false">Always listen: Hi Loomo</button>
       </form>
+      <p class="hint">Voice commands only reach the LLM after <strong>Hi Loomo</strong> — like Siri. Example: “Hi Loomo, bring me to Lübeck train station”.</p>
+      <p id="wake-status" class="hint"></p>
       <p id="agent-reply" class="speech">LLM replies appear here.</p>
     </section>
 
