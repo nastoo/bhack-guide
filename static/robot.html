@@ -20,6 +20,7 @@
       </select>
       · <span id="robot-meta">Loading…</span>
     </p>
+    <p id="auth-bar" class="auth-bar" hidden></p>
   </header>
 
   <main>
@@ -39,7 +40,9 @@
   </main>
 
   <footer><span id="status">Ready</span></footer>
+  <script src="/static/auth.js"></script>
   <script src="/static/robots.js"></script>
-  <script src="/static/robot.js?v=2"></script>
+  <script src="/static/robot.js?v=3"></script>
+  <script>initAuthBar();</script>
 </body>
 </html>

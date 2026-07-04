@@ -4,3 +4,6 @@ pyyaml
 aiohttp
 python-dotenv
 openai
+authlib
+httpx
+itsdangerous

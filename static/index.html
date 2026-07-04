@@ -20,6 +20,7 @@
       · <a href="/robot">Direct robot chat (LLM)</a>
       · <a href="/test">Audio test (Whisper + speaker)</a>
     </p>
+    <p id="auth-bar" class="auth-bar" hidden></p>
   </header>
 
   <main>
@@ -79,7 +80,9 @@ go straight for 3m</textarea>
   </main>
 
   <footer><span id="connection">Connecting…</span></footer>
+  <script src="/static/auth.js"></script>
   <script src="/static/robots.js"></script>
-  <script src="/static/dashboard.js?v=5"></script>
+  <script src="/static/dashboard.js?v=6"></script>
+  <script>initAuthBar();</script>
 </body>
 </html>

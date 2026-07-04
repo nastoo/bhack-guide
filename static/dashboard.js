@@ -23,10 +23,7 @@ const manualStopBtn = document.getElementById("manual-stop-btn");
 const manualSpeakInput = document.getElementById("manual-speak");
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const response = await authFetch(path, options);
   if (!response.ok) {
     const text = await response.text();
     try {
