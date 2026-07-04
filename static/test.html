@@ -11,6 +11,7 @@
     <h1>Robot hardware test</h1>
     <p class="subtitle">Safe in-room checks — short moves, speak, listen (requires ROBOT_SIMULATED=false)</p>
     <p class="hint"><a href="/">← Back to navigation</a></p>
+    <p id="auth-bar" class="auth-bar" hidden></p>
   </header>
 
   <main>
@@ -63,15 +64,16 @@
     </section>
   </main>
 
+  <script src="/static/auth.js"></script>
   <script>
+    initAuthBar();
     const output = document.getElementById("output");
 
     async function runTest(path, body = {}) {
       output.textContent = "Running…";
       try {
-        const res = await fetch(path, {
+        const res = await authFetch(path, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         const data = await res.json();

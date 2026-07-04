@@ -28,10 +28,7 @@ function escapeHtml(text) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const response = await authFetch(path, options);
   if (!response.ok) {
     throw new Error(await response.text() || response.statusText);
   }

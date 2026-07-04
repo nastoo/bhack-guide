@@ -2,6 +2,18 @@ service:
   host: "0.0.0.0"
   port: 8001
 
+# OIDC authentication (PocketId). Set OIDC_ENABLED=true in .env to activate.
+auth:
+  enabled: "${OIDC_ENABLED:-false}"
+  issuer: "${OIDC_ISSUER:-}"
+  client_id: "${OIDC_CLIENT_ID:-}"
+  client_secret: "${OIDC_CLIENT_SECRET:-}"
+  redirect_uri: "${OIDC_REDIRECT_URI:-}"
+  base_url: "${OIDC_BASE_URL:-}"
+  host: "${TRAEFIK_HOST:-}"
+  session_secret: "${SESSION_SECRET:-}"
+  scopes: "${OIDC_SCOPES:-openid email profile}"
+
 api:
   base_url: "${NAV_API_BASE_URL:-https://models.mylab.th-luebeck.dev/v1}"
   api_key: "${NAV_API_KEY:-none}"

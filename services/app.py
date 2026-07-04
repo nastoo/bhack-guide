@@ -29,6 +29,7 @@ from core.robot_http import LOOMO_CMD_PATH, RobotHttpClient
 from core.robot_agent import DirectRobotAgent
 from core import robot_profiles
 from core.voice_agent import VoiceAgent
+from core.auth import setup_auth, user_from_websocket
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -320,6 +321,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LLM Robot Navigation", lifespan=lifespan)
+auth_settings = setup_auth(app, load_settings())
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -721,6 +723,9 @@ async def api_test_stop():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if auth_settings.enabled and not user_from_websocket(websocket, auth_settings):
+        await websocket.close(code=1008, reason="Not authenticated")
+        return
     await websocket.accept()
     _ws_clients.add(websocket)
     try:

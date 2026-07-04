@@ -1,9 +1,6 @@
 /** Robot picker — shared by home page and /robot chat. */
 async function robotApi(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const response = await authFetch(path, options);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || response.statusText);
