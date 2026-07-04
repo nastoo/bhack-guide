@@ -78,11 +78,17 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
+          debug: true
+          command_timeout: 20m
           envs: TRAEFIK_HOST,CERT_RESOLVER,NAV_API_KEY,GOOGLE_MAPS_API_KEY,NAV_API_BASE_URL,NAV_LLM_MODEL,ROBOT_SIMULATED,GPS_STREAM_URL,GPS_TOKEN,GPS_ACCESS_PASSWORD,OIDC_ENABLED,OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET,SESSION_SECRET
-          script_stop: true
           script: |
             set -euo pipefail
             cd ${{ env.DEPLOY_PATH }}
+
+            echo "=== Deploy preflight ==="
+            docker --version
+            docker compose version
+            ls -la
 
             traefik_host="${TRAEFIK_HOST:-guide.moln.nasto.ovh}"
             if [[ "$traefik_host" == http://* ]]; then
@@ -102,6 +108,7 @@ jobs:
               oidc_enabled="false"
             fi
 
+            echo "=== Writing .env ==="
             printf 'TRAEFIK_HOST=%s\nCERT_RESOLVER=%s\nNAV_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\nNAV_API_BASE_URL=%s\nNAV_LLM_MODEL=%s\nROBOT_SIMULATED=%s\nGPS_STREAM_URL=%s\nGPS_TOKEN=%s\nGPS_ACCESS_PASSWORD=%s\nOIDC_ENABLED=%s\nOIDC_ISSUER=%s\nOIDC_CLIENT_ID=%s\nOIDC_CLIENT_SECRET=%s\nOIDC_BASE_URL=%s\nOIDC_REDIRECT_URI=%s\nSESSION_SECRET=%s\nPORT=8001\n' \
               "$traefik_host" \
               "${CERT_RESOLVER:-letsencrypt}" \
@@ -121,8 +128,27 @@ jobs:
               "${oidc_base_url}/auth/callback" \
               "${SESSION_SECRET:-}" > .env
 
-            docker compose up -d --build --remove-orphans
-            docker image prune -f
+            echo "=== .env (sanitized) ==="
+            sed -E 's/^(OIDC_CLIENT_SECRET|SESSION_SECRET|NAV_API_KEY|GPS_TOKEN|GPS_ACCESS_PASSWORD|GOOGLE_MAPS_API_KEY)=.*/\1=***/' .env
 
-            echo "Deployment complete:"
+            if ! docker network inspect traefik_proxy >/dev/null 2>&1; then
+              echo "ERROR: Docker network 'traefik_proxy' not found. Create it on the server: docker network create traefik_proxy"
+              exit 1
+            fi
+
+            echo "=== docker compose config ==="
+            docker compose config
+
+            echo "=== docker compose up ==="
+            if ! docker compose up -d --build --remove-orphans; then
+              echo "ERROR: docker compose up failed"
+              docker compose ps -a || true
+              docker compose logs --no-color --tail=80 || true
+              exit 1
+            fi
+
+            docker image prune -f || true
+
+            echo "=== Deployment complete ==="
             docker compose ps
+            docker compose logs --no-color --tail=30 guide || true
