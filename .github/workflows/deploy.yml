@@ -21,13 +21,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_PRIVATE_KEY//[[:space:]]/}" ]; then
+            echo "::error::SSH_PRIVATE_KEY is empty. Add it under Settings → Environments → prod → Secrets (or repository secrets)."
+            exit 1
+          fi
+          umask 077
+          key_file="${RUNNER_TEMP}/deploy_key"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          if ! ssh-keygen -y -f "$key_file" > /dev/null 2>&1; then
+            echo "::error::SSH_PRIVATE_KEY is not a valid private key. Paste the full key including -----BEGIN ... PRIVATE KEY----- and -----END ... PRIVATE KEY----- lines, with line breaks preserved (no quotes)."
+            exit 1
+          fi
+          echo "SSH_KEY_PATH=$key_file" >> "$GITHUB_ENV"
+
       - name: Prepare deploy directory
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
+          key_path: ${{ env.SSH_KEY_PATH }}
+          port: ${{ secrets.SSH_PORT || '22' }}
           script: mkdir -p ${{ env.DEPLOY_PATH }}
 
       - name: Copy project files
@@ -35,8 +54,8 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
+          key_path: ${{ env.SSH_KEY_PATH }}
+          port: ${{ secrets.SSH_PORT || '22' }}
           source: "docker-compose.yml,Dockerfile,requirements.txt,.dockerignore,launch.py,core,configs,services,static"
           target: ${{ env.DEPLOY_PATH }}
           overwrite: true
@@ -54,19 +73,42 @@ jobs:
           GPS_STREAM_URL: ${{ vars.GPS_STREAM_URL }}
           GPS_TOKEN: ${{ secrets.GPS_TOKEN }}
           GPS_ACCESS_PASSWORD: ${{ secrets.GPS_ACCESS_PASSWORD }}
+          OIDC_ENABLED: ${{ vars.OIDC_ENABLED }}
+          OIDC_ISSUER: ${{ vars.OIDC_ISSUER }}
+          OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
+          OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: TRAEFIK_HOST,CERT_RESOLVER,NAV_API_KEY,GOOGLE_MAPS_API_KEY,NAV_API_BASE_URL,NAV_LLM_MODEL,ROBOT_SIMULATED,GPS_STREAM_URL,GPS_TOKEN,GPS_ACCESS_PASSWORD
+          key_path: ${{ env.SSH_KEY_PATH }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          envs: TRAEFIK_HOST,CERT_RESOLVER,NAV_API_KEY,GOOGLE_MAPS_API_KEY,NAV_API_BASE_URL,NAV_LLM_MODEL,ROBOT_SIMULATED,GPS_STREAM_URL,GPS_TOKEN,GPS_ACCESS_PASSWORD,OIDC_ENABLED,OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET,SESSION_SECRET
           script_stop: true
           script: |
             set -euo pipefail
             cd ${{ env.DEPLOY_PATH }}
 
-            printf 'TRAEFIK_HOST=%s\nCERT_RESOLVER=%s\nNAV_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\nNAV_API_BASE_URL=%s\nNAV_LLM_MODEL=%s\nROBOT_SIMULATED=%s\nGPS_STREAM_URL=%s\nGPS_TOKEN=%s\nGPS_ACCESS_PASSWORD=%s\nPORT=8001\n' \
-              "${TRAEFIK_HOST:-guide.moln.nasto.ovh}" \
+            traefik_host="${TRAEFIK_HOST:-guide.moln.nasto.ovh}"
+            if [[ "$traefik_host" == http://* ]]; then
+              oidc_base_url="${traefik_host%/}"
+              traefik_host="${traefik_host#http://}"
+            elif [[ "$traefik_host" == https://* ]]; then
+              oidc_base_url="${traefik_host%/}"
+              traefik_host="${traefik_host#https://}"
+            else
+              oidc_base_url="https://${traefik_host}"
+            fi
+            traefik_host="${traefik_host%%/*}"
+
+            oidc_enabled="${OIDC_ENABLED:-true}"
+            if [ -z "${OIDC_CLIENT_ID:-}" ] || [ -z "${OIDC_CLIENT_SECRET:-}" ] || [ -z "${SESSION_SECRET:-}" ]; then
+              echo "WARNING: OIDC secrets missing (OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, or SESSION_SECRET); disabling OIDC"
+              oidc_enabled="false"
+            fi
+
+            printf 'TRAEFIK_HOST=%s\nCERT_RESOLVER=%s\nNAV_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\nNAV_API_BASE_URL=%s\nNAV_LLM_MODEL=%s\nROBOT_SIMULATED=%s\nGPS_STREAM_URL=%s\nGPS_TOKEN=%s\nGPS_ACCESS_PASSWORD=%s\nOIDC_ENABLED=%s\nOIDC_ISSUER=%s\nOIDC_CLIENT_ID=%s\nOIDC_CLIENT_SECRET=%s\nOIDC_BASE_URL=%s\nOIDC_REDIRECT_URI=%s\nSESSION_SECRET=%s\nPORT=8001\n' \
+              "$traefik_host" \
               "${CERT_RESOLVER:-letsencrypt}" \
               "${NAV_API_KEY:-none}" \
               "${GOOGLE_MAPS_API_KEY:-}" \
@@ -75,7 +117,14 @@ jobs:
               "${ROBOT_SIMULATED:-true}" \
               "${GPS_STREAM_URL:-}" \
               "${GPS_TOKEN:-}" \
-              "${GPS_ACCESS_PASSWORD:-}" > .env
+              "${GPS_ACCESS_PASSWORD:-}" \
+              "$oidc_enabled" \
+              "${OIDC_ISSUER:-https://auth.moln.nasto.ovh}" \
+              "${OIDC_CLIENT_ID:-}" \
+              "${OIDC_CLIENT_SECRET:-}" \
+              "$oidc_base_url" \
+              "${oidc_base_url}/auth/callback" \
+              "${SESSION_SECRET:-}" > .env
 
             docker compose up -d --build --remove-orphans
             docker image prune -f

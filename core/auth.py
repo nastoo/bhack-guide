@@ -127,6 +127,57 @@ def validate_auth_settings(auth: AuthSettings) -> list[str]:
     return missing
 
 
+def _mask_secret(value: str) -> str:
+    if not value:
+        return "(empty)"
+    if len(value) <= 4:
+        return f"*** ({len(value)} chars)"
+    return f"{value[:4]}… ({len(value)} chars)"
+
+
+def log_auth_config(auth: AuthSettings) -> None:
+    """Log resolved OIDC settings at startup (secrets masked) for docker-compose debugging."""
+    env_keys = (
+        "OIDC_ENABLED",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "OIDC_REDIRECT_URI",
+        "OIDC_BASE_URL",
+        "OIDC_SCOPES",
+        "SESSION_SECRET",
+        "OIDC_SESSION_SECRET",
+        "TRAEFIK_HOST",
+    )
+    env_present = {key: key in os.environ for key in env_keys}
+    missing = validate_auth_settings(auth)
+    logger.info(
+        "OIDC configuration (resolved):\n"
+        "  enabled=%s\n"
+        "  issuer=%s\n"
+        "  discovery_url=%s\n"
+        "  client_id=%s\n"
+        "  client_secret=%s\n"
+        "  redirect_uri=%s\n"
+        "  base_url=%s\n"
+        "  session_secret=%s\n"
+        "  scopes=%s\n"
+        "  missing_required=%s\n"
+        "  env_vars_present=%s",
+        auth.enabled,
+        auth.issuer or "(empty)",
+        auth.discovery_url if auth.issuer else "(empty)",
+        auth.client_id or "(empty)",
+        _mask_secret(auth.client_secret),
+        auth.redirect_uri or "(empty)",
+        auth.base_url or "(empty)",
+        _mask_secret(auth.session_secret),
+        auth.scopes,
+        ", ".join(missing) if missing else "(none)",
+        env_present,
+    )
+
+
 def is_public_path(path: str) -> bool:
     if path in PUBLIC_PATHS:
         return True
@@ -202,6 +253,7 @@ def _normalize_user(userinfo: dict[str, Any]) -> dict[str, Any]:
 
 def setup_auth(app: FastAPI, settings: dict | None = None) -> AuthSettings:
     auth = load_auth_settings(settings)
+    log_auth_config(auth)
 
     @app.get("/auth/me")
     async def auth_me(request: Request):
