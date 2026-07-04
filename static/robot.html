@@ -12,7 +12,8 @@
     <p class="subtitle">Tell the robot what to do — distance moves use configured speed (e.g. 50 m at 3 km/h ≈ 60 s)</p>
     <p class="hint">
       <a href="/">← Navigation</a>
-      · <a href="/test">Hardware tests</a>
+      · <a href="/settings">Settings</a>
+      · <a href="/test" data-feature="audio_test">Hardware tests</a>
       · <label for="robot-select">Robot:</label>
       <select id="robot-select" aria-label="Select robot">
         <option value="loomo">Loomo</option>
@@ -41,8 +42,13 @@
 
   <footer><span id="status">Ready</span></footer>
   <script src="/static/auth.js"></script>
+  <script src="/static/feature-settings.js"></script>
   <script src="/static/robots.js"></script>
   <script src="/static/robot.js?v=3"></script>
-  <script>initAuthBar();</script>
+  <script>
+    guardFeaturePage("direct_robot_chat");
+    initAuthBar();
+    applyFeatureVisibility();
+  </script>
 </body>
 </html>

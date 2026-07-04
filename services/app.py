@@ -437,6 +437,11 @@ def robot_page():
     return RedirectResponse(url="/static/robot.html")
 
 
+@app.get("/settings")
+def settings_page():
+    return RedirectResponse(url="/static/settings.html")
+
+
 @app.get("/health")
 def health():
     settings = load_settings()

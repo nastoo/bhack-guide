@@ -17,14 +17,15 @@
         <option value="go1">Dog (Go1)</option>
       </select>
       <span id="robot-meta">Loading…</span>
-      · <a href="/robot">Direct robot chat (LLM)</a>
-      · <a href="/test">Audio test (Whisper + speaker)</a>
+      · <a href="/settings">Settings</a>
+      · <a href="/robot" data-feature="direct_robot_chat">Direct robot chat (LLM)</a>
+      · <a href="/test" data-feature="audio_test">Audio test (Whisper + speaker)</a>
     </p>
     <p id="auth-bar" class="auth-bar" hidden></p>
   </header>
 
   <main>
-    <section class="panel">
+    <section class="panel" data-feature="navigator">
       <h2>Talk to the navigator</h2>
       <form id="chat-form" class="guide-form">
         <input id="chat-input" type="text" placeholder='Try: "Take me to Lübeck Hauptbahnhof"' required />
@@ -54,7 +55,7 @@ go straight for 3m</textarea>
       <p id="manual-preview" class="hint"></p>
     </section>
 
-    <section class="panel hero">
+    <section class="panel hero" data-feature="gps_navigation">
       <h2>GPS navigation</h2>
       <form id="nav-form" class="guide-form">
         <input id="dest-input" type="text" placeholder="Destination name or address" required />
@@ -81,8 +82,12 @@ go straight for 3m</textarea>
 
   <footer><span id="connection">Connecting…</span></footer>
   <script src="/static/auth.js"></script>
+  <script src="/static/feature-settings.js"></script>
   <script src="/static/robots.js"></script>
   <script src="/static/dashboard.js?v=6"></script>
-  <script>initAuthBar();</script>
+  <script>
+    initAuthBar();
+    applyFeatureVisibility();
+  </script>
 </body>
 </html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — LLM Robot Navigation</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Settings</h1>
+    <p class="subtitle">Show or hide features in the navigation UI</p>
+    <p class="hint"><a href="/">← Back to navigation</a></p>
+    <p id="auth-bar" class="auth-bar" hidden></p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Feature visibility</h2>
+      <p class="hint">Toggles are saved in this browser. Disabled features are hidden from the dashboard and their pages redirect home.</p>
+      <form id="feature-settings-form" class="settings-form">
+        <label class="settings-toggle">
+          <input name="gps_navigation" type="checkbox" />
+          <span class="settings-toggle-text">
+            <strong>GPS navigation</strong>
+            <small>Destination search and turn-by-turn route on the home page</small>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input name="navigator" type="checkbox" />
+          <span class="settings-toggle-text">
+            <strong>Navigator</strong>
+            <small>Talk to the navigator — LLM voice/text agent on the home page</small>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input name="audio_test" type="checkbox" />
+          <span class="settings-toggle-text">
+            <strong>Audio test</strong>
+            <small>Whisper + speaker hardware test page</small>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input name="direct_robot_chat" type="checkbox" />
+          <span class="settings-toggle-text">
+            <strong>Direct robot chat (LLM)</strong>
+            <small>Direct natural-language robot control page</small>
+          </span>
+        </label>
+      </form>
+      <div class="guide-form settings-actions">
+        <button id="feature-settings-reset" type="button">Reset to defaults</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/auth.js"></script>
+  <script src="/static/feature-settings.js"></script>
+  <script>
+    initAuthBar();
+    initFeatureSettingsPage();
+  </script>
+</body>
+</html>
