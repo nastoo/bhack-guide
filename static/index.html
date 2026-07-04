@@ -35,6 +35,7 @@
       </form>
       <p class="hint">Voice commands only reach the LLM after <strong>Hi Loomo</strong> — like Siri. Example: “Hi Loomo, bring me to Lübeck train station”.</p>
       <p id="wake-status" class="hint"></p>
+      <div id="wake-log" class="wake-log" aria-live="polite" aria-label="Hi Loomo debug log"></div>
       <p id="agent-reply" class="speech">LLM replies appear here.</p>
     </section>
 
@@ -87,7 +88,7 @@ go straight for 3m</textarea>
   <script src="/static/auth.js"></script>
   <script src="/static/feature-settings.js"></script>
   <script src="/static/robots.js"></script>
-  <script src="/static/dashboard.js?v=6"></script>
+  <script src="/static/dashboard.js?v=7"></script>
   <script>
     initAuthBar();
     applyFeatureVisibility();

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from base64 import b64decode
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 SESSION_USER_KEY = "user"
 SESSION_MAX_AGE_SEC = 14 * 24 * 3600
 PUBLIC_PATHS = frozenset({"/health"})
-PUBLIC_PREFIXES = ("/auth/",)
+PUBLIC_PREFIXES = ("/auth/", "/static/")
 
 oauth = OAuth()
 
@@ -143,8 +144,8 @@ def session_from_cookies(cookies: dict[str, str], secret_key: str) -> dict[str, 
         return {}
     signer = itsdangerous.TimestampSigner(str(secret_key))
     try:
-        payload = signer.unsign(raw, max_age=SESSION_MAX_AGE_SEC)
-        data = json.loads(payload.decode("utf-8"))
+        payload = signer.unsign(raw.encode("utf-8"), max_age=SESSION_MAX_AGE_SEC)
+        data = json.loads(b64decode(payload))
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
@@ -217,12 +218,23 @@ def setup_auth(app: FastAPI, settings: dict | None = None) -> AuthSettings:
 
     missing = validate_auth_settings(auth)
     if missing:
-        raise RuntimeError(
-            "OIDC is enabled but required settings are missing: "
-            + ", ".join(missing)
+        logger.error(
+            "OIDC is enabled but required settings are missing (%s); authentication disabled",
+            ", ".join(missing),
+        )
+        return AuthSettings(
+            enabled=False,
+            issuer=auth.issuer,
+            client_id=auth.client_id,
+            client_secret=auth.client_secret,
+            redirect_uri=auth.redirect_uri,
+            base_url=auth.base_url,
+            session_secret=auth.session_secret,
+            scopes=auth.scopes,
         )
 
     _register_oauth_client(auth)
+    # SessionMiddleware must wrap AuthMiddleware so request.session exists.
     app.add_middleware(AuthMiddleware, auth=auth)
     app.add_middleware(
         SessionMiddleware,

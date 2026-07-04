@@ -34,6 +34,28 @@ button {
 .value { font-size: 1.05rem; font-weight: 600; }
 .speech { font-size: 1.2rem; line-height: 1.5; margin: 0; color: var(--accent-2); }
 .hint { color: var(--muted); font-size: 0.9rem; }
+.wake-log {
+  margin: 0.5rem 0 0.75rem;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #0b1016;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.wake-log:empty::before {
+  content: "Hi Loomo debug log — start the listener or click Listen once to see mic → Whisper → wake detection steps.";
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.wake-log-line { padding: 0.1rem 0; color: var(--muted); }
+.wake-log-line.wake-log-ok { color: #7fd4a8; }
+.wake-log-line.wake-log-warn { color: #e8c07d; }
+.wake-log-line.wake-log-error { color: #f08a8a; }
 .auth-bar { color: var(--muted); font-size: 0.9rem; margin-top: 0.35rem; }
 .auth-user { color: var(--accent-2); }
 .route-steps { margin: 0; padding-left: 1.2rem; color: var(--muted); line-height: 1.7; }

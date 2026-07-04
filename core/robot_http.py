@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 import os
 import struct
 import wave
@@ -21,6 +22,7 @@ API_LOOMO = "loomo"
 LOOMO_CMD_PATH = "/api/cmd"
 LOOMO_STATUS_PATH = "/api/"
 LOOMO_AUDIO_WAV_PATH = "/api/audio.wav"
+LOOMO_CLIP_DURATION_SEC = 2.0
 
 
 def detect_robot_api(base_url: str, explicit: str | None = None) -> str:
@@ -429,16 +431,35 @@ class RobotHttpClient:
             return None
 
         if self.api == API_LOOMO:
-            return await self._loomo_capture_audio()
+            return await self._loomo_capture_audio(duration)
 
         return await self._go1_capture_audio(duration)
 
-    async def _loomo_capture_audio(self) -> bytes | None:
-        """Loomo: GET /api/audio.wav (~2s 16kHz mono WAV)."""
-        data = await self._get_bytes(LOOMO_AUDIO_WAV_PATH)
-        if not data:
+    async def _loomo_capture_audio(self, duration: float = 5.0) -> bytes | None:
+        """Loomo: GET /api/audio.wav (~2s 16kHz mono WAV per request).
+
+        Requests multiple clips when duration > 2s and concatenates them.
+        """
+        duration = max(LOOMO_CLIP_DURATION_SEC, min(float(duration), 15.0))
+        clips_needed = max(1, math.ceil(duration / LOOMO_CLIP_DURATION_SEC))
+        clips: list[bytes] = []
+        for _ in range(clips_needed):
+            data = await self._get_bytes(LOOMO_AUDIO_WAV_PATH)
+            if data:
+                clips.append(data)
+        if not clips:
             logger.warning("Loomo %s returned no data", LOOMO_AUDIO_WAV_PATH)
-        return data
+            return None
+        if len(clips) == 1:
+            return clips[0]
+        merged = _concat_wav_clips(clips)
+        if merged:
+            logger.info(
+                "Loomo: merged %d audio clip(s) (~%.1fs requested)",
+                len(clips),
+                duration,
+            )
+        return merged
 
     async def _go1_capture_audio(self, duration: float) -> bytes | None:
         ws_url = (
@@ -483,6 +504,32 @@ class RobotHttpClient:
             wf.setframerate(48000)
             wf.writeframes(pcm_data)
         return buf.getvalue()
+
+
+def _concat_wav_clips(clips: list[bytes]) -> bytes | None:
+    if not clips:
+        return None
+    pcm_parts: list[bytes] = []
+    params: tuple[int, int, int] | None = None
+    for clip in clips:
+        with wave.open(io.BytesIO(clip), "rb") as wf:
+            clip_params = (wf.getnchannels(), wf.getsampwidth(), wf.getframerate())
+            if params is None:
+                params = clip_params
+            elif clip_params != params:
+                logger.warning("Loomo audio clip format mismatch — skipping merge")
+                return clips[0]
+            pcm_parts.append(wf.readframes(wf.getnframes()))
+    if params is None:
+        return None
+    nchannels, sampwidth, framerate = params
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wf:
+        wf.setnchannels(nchannels)
+        wf.setsampwidth(sampwidth)
+        wf.setframerate(framerate)
+        wf.writeframes(b"".join(pcm_parts))
+    return out.getvalue()
 
 
 def _wav_to_pcm_48k(audio_bytes: bytes) -> bytes:

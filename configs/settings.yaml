@@ -19,6 +19,7 @@ api:
   api_key: "${NAV_API_KEY:-none}"
   model: "${NAV_LLM_MODEL:-chat-vl-large}"
   stt_model: "${NAV_STT_MODEL:-whisper-3-large}"
+  stt_language: "${NAV_STT_LANGUAGE:-en}"
   tts_model: "${NAV_TTS_MODEL:-xtts-v2}"
 
 robot:
@@ -83,8 +84,31 @@ robot_agent:
 wake_word:
   auto_start: "${WAKE_WORD_AUTO_START:-false}"
   poll_interval_sec: 0.4
-  capture_duration_sec: 2.0
+  capture_duration_sec: "${WAKE_CAPTURE_DURATION_SEC:-5.0}"
   cooldown_sec: 3.0
+  # Add any phrase Whisper might hear before your command (lowercase, one per line).
+  phrases:
+    - "hi loomo"
+    - "hey loomo"
+    - "hello loomo"
+    - "ok loomo"
+    - "okay loomo"
+    - "hi lomo"
+    - "okay lomo"
+    - "okay lumo"
+    - "hey lomo"
+    - "hello lomo"
+    - "hi loom o"
+    - "hey loom o"
+    - "high loomo"
+    - "high lomo"
+    - "Hi Lumo"
+    - "Hi Lumoo"
+    - "Salut Lumo"
+    - "Franzosen"
+    - "Fika"
+    - "Allez vous"
+    - "Bonsoir mon cher"
 
 # Safe caps for in-room motion tests (/api/test/move, --test move)
 motion_test:

@@ -51,6 +51,27 @@
     </section>
 
     <section class="panel">
+      <h2>Local mic test (your computer)</h2>
+      <p class="hint">
+        Uses the browser microphone — no robot required. Good for testing Whisper and
+        <strong>Hi Loomo</strong> wake detection before trying the robot mic.
+      </p>
+      <form id="local-mic-form" class="guide-form">
+        <input id="local-mic-duration" type="number" min="1" max="30" value="5" title="seconds" />
+        <label class="speak-toggle">
+          <input id="local-mic-wake" type="checkbox" checked />
+          Require "Hi Loomo"
+        </label>
+        <label class="speak-toggle">
+          <input id="local-mic-agent" type="checkbox" />
+          Send to LLM after wake
+        </label>
+        <button id="local-mic-btn" type="submit">Record from computer mic</button>
+      </form>
+      <p id="local-mic-status" class="hint"></p>
+    </section>
+
+    <section class="panel">
       <h2>Echo (mic → Whisper → speak)</h2>
       <form id="echo-form" class="guide-form">
         <input id="echo-duration" type="number" min="1" max="30" value="5" />
@@ -66,6 +87,7 @@
 
   <script src="/static/auth.js"></script>
   <script src="/static/feature-settings.js"></script>
+  <script src="/static/local-mic.js"></script>
   <script>
     guardFeaturePage("audio_test");
     initAuthBar();
@@ -106,6 +128,35 @@
       e.preventDefault();
       runTest("/api/test/listen", { duration: Number(document.getElementById("listen-duration").value) });
     });
+
+    document.getElementById("local-mic-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("local-mic-btn");
+      const statusEl = document.getElementById("local-mic-status");
+      const duration = Number(document.getElementById("local-mic-duration").value) || 5;
+      const requireWakeWord = document.getElementById("local-mic-wake").checked;
+      const runAgent = document.getElementById("local-mic-agent").checked;
+      btn.disabled = true;
+      statusEl.textContent = `Recording ${duration}s from your mic… allow microphone access if prompted.`;
+      output.textContent = "Recording…";
+      try {
+        const data = await uploadLocalMicTest({
+          durationSec: duration,
+          requireWakeWord,
+          runAgent,
+        });
+        output.textContent = JSON.stringify(data, null, 2);
+        statusEl.textContent = data.heard
+          ? `Heard: "${data.heard}"`
+          : (data.reply || "Done.");
+      } catch (err) {
+        output.textContent = String(err);
+        statusEl.textContent = String(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("echo-form").addEventListener("submit", (e) => {
       e.preventDefault();
       runTest("/api/test/echo", { duration: Number(document.getElementById("echo-duration").value) });

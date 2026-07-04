@@ -35,7 +35,7 @@ class WakeListener:
         on_command: Callable[[str], Awaitable[dict]],
         on_event: Callable[[dict], Awaitable[None]] | None = None,
         poll_interval_sec: float = 0.4,
-        capture_duration_sec: float = 2.0,
+        capture_duration_sec: float = 5.0,
         cooldown_sec: float = 3.0,
     ) -> None:
         self.robot = robot
@@ -106,6 +106,13 @@ class WakeListener:
     async def _listen_once(self, loop: asyncio.AbstractEventLoop) -> None:
         if self.robot.simulated:
             self.state.last_status = "simulated — mic unavailable"
+            await self._emit(
+                {
+                    "type": "wake_listener",
+                    "status": "simulated",
+                    "message": "Mic unavailable in simulated mode",
+                }
+            )
             await asyncio.sleep(1.0)
             return
 
@@ -114,25 +121,50 @@ class WakeListener:
 
         async with self._busy:
             self.state.last_status = "capturing"
+            await self._emit({"type": "wake_listener", "status": "capturing"})
+            logger.info("Wake: capturing mic (%.1fs)", self.capture_duration_sec)
             wav = await self.robot.capture_audio(self.capture_duration_sec)
             if not wav:
                 self.state.last_status = "listening (no audio)"
+                await self._emit({"type": "wake_listener", "status": "no_audio"})
+                logger.info("Wake: no audio from mic")
                 return
 
             self.state.last_status = "transcribing"
+            await self._emit(
+                {
+                    "type": "wake_listener",
+                    "status": "transcribing",
+                    "audio_bytes": len(wav),
+                }
+            )
+            logger.info("Wake: transcribing %d bytes", len(wav))
             heard = await loop.run_in_executor(None, transcribe_audio, wav)
             heard = (heard or "").strip()
             self.state.last_transcript = heard
 
             if not heard:
                 self.state.last_status = "listening (silent)"
+                await self._emit(
+                    {
+                        "type": "wake_listener",
+                        "status": "silent",
+                        "audio_bytes": len(wav),
+                    }
+                )
+                logger.info("Wake: silent — %d bytes but empty transcript", len(wav))
                 return
+
+            await self._emit(
+                {"type": "wake_listener", "status": "heard", "heard": heard}
+            )
+            logger.info("Wake: heard %r", heard)
 
             command, reason = extract_wake_command(heard)
             if command is None:
                 self.state.ignored += 1
                 self.state.last_status = f"ignored ({reason})"
-                logger.debug("Wake ignored: %r — %s", heard, reason)
+                logger.info("Wake: ignored %r — %s", heard, reason)
                 await self._emit(
                     {
                         "type": "wake_listener",
@@ -146,7 +178,7 @@ class WakeListener:
             self.state.triggers += 1
             self.state.last_command = command
             self.state.last_status = f"triggered: {command[:60]}"
-            logger.info("Wake phrase detected — heard=%r command=%r", heard, command)
+            logger.info("Wake: TRIGGERED — heard=%r command=%r", heard, command)
 
             await self._emit(
                 {
@@ -158,9 +190,19 @@ class WakeListener:
             )
 
             self.state.last_status = "thinking"
+            await self._emit(
+                {
+                    "type": "wake_listener",
+                    "status": "thinking",
+                    "heard": heard,
+                    "command": command,
+                }
+            )
+            logger.info("Wake: running agent for command=%r", command)
             result = await self.on_command(command)
             reply = (result.get("reply") or "").strip()
             self.state.last_reply = reply
+            logger.info("Wake: agent replied %r", reply[:120] if reply else "")
 
             await self._emit(
                 {

@@ -6,9 +6,13 @@ function redirectToLogin() {
 }
 
 async function authFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  }
   const response = await fetch(path, {
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers,
     ...options,
   });
   if (response.status === 401) {
@@ -32,6 +36,10 @@ async function initAuthBar(containerId = "auth-bar") {
     if (data.auth_disabled) {
       container.hidden = true;
       return data;
+    }
+    if (!data.authenticated) {
+      redirectToLogin();
+      return null;
     }
     container.hidden = false;
     const user = data.user || {};

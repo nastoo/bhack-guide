@@ -32,6 +32,15 @@ def default_model() -> str:
     return os.environ.get("NAV_LLM_MODEL", MYLAB_DEFAULT_MODEL)
 
 
+def stt_model() -> str:
+    return os.environ.get("NAV_STT_MODEL", "whisper-3-large")
+
+
+def stt_language() -> str:
+    """ISO-639-1 code for Whisper (e.g. en). Empty disables language hint."""
+    return os.environ.get("NAV_STT_LANGUAGE", "en").strip().lower() or "en"
+
+
 def _client() -> OpenAI:
     return OpenAI(base_url=api_base_url(), api_key=api_key())
 
@@ -46,10 +55,19 @@ def chat_completion(messages: list[dict], *, model: str | None = None, **kwargs)
     return response.choices[0].message.content or ""
 
 
-def transcribe_audio(audio_data: bytes, filename: str = "audio.wav") -> str:
+def transcribe_audio(
+    audio_data: bytes,
+    filename: str = "audio.wav",
+    *,
+    language: str | None = None,
+) -> str:
     client = _client()
-    model = os.environ.get("NAV_STT_MODEL", "whisper-3-large")
+    model = stt_model()
+    lang = (language or stt_language()).strip().lower() or None
     audio_file = io.BytesIO(audio_data)
     audio_file.name = filename
-    response = client.audio.transcriptions.create(model=model, file=audio_file)
+    kwargs: dict = {"model": model, "file": audio_file}
+    if lang:
+        kwargs["language"] = lang
+    response = client.audio.transcriptions.create(**kwargs)
     return response.text

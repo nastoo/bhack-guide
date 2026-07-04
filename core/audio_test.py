@@ -7,7 +7,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-from core.api_client import transcribe_audio
+from core.api_client import stt_language, transcribe_audio
 from core.robot_http import LOOMO_CMD_PATH, RobotHttpClient
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ class AudioTestRunner:
                     steps=steps,
                 )
 
-            steps.append(f"whisper ({self.stt_model})")
+            steps.append(f"whisper ({self.stt_model}, lang={stt_language()})")
             loop = asyncio.get_event_loop()
             heard = await loop.run_in_executor(None, transcribe_audio, wav)
             heard = (heard or "").strip()
@@ -141,7 +141,7 @@ class AudioTestRunner:
                     steps=steps,
                 )
 
-            steps.append(f"whisper ({self.stt_model})")
+            steps.append(f"whisper ({self.stt_model}, lang={stt_language()})")
             loop = asyncio.get_event_loop()
             heard = await loop.run_in_executor(None, transcribe_audio, wav)
             heard = (heard or "").strip()

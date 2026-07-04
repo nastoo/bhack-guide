@@ -15,6 +15,7 @@ const chatInput = document.getElementById("chat-input");
 const listenBtn = document.getElementById("listen-btn");
 const wakeBtn = document.getElementById("wake-btn");
 const wakeStatusEl = document.getElementById("wake-status");
+const wakeLogEl = document.getElementById("wake-log");
 const agentReplyEl = document.getElementById("agent-reply");
 const manualForm = document.getElementById("manual-form");
 const manualNameInput = document.getElementById("manual-name");
@@ -133,8 +134,13 @@ if (listenBtn) {
         body: JSON.stringify({ duration: 5, require_wake_word: true, ...getForceRouteOptions() }),
       });
       if (result.wake_triggered === false) {
+        appendWakeLog(
+          `Listen once: wake failed — "${result.heard}" (${result.wake_reason || "no match"})`,
+          "warn",
+        );
         agentReplyEl.textContent = result.reply || `Heard "${result.heard}" — wake phrase not detected.`;
       } else {
+        appendWakeLog(`Listen once: wake OK → "${result.command}"`, "ok");
         agentReplyEl.textContent = result.command
           ? `Command: "${result.command}" — ${result.reply}`
           : result.reply || "No speech detected";
@@ -145,6 +151,97 @@ if (listenBtn) {
       listenBtn.disabled = false;
     }
   });
+}
+
+const WAKE_LOG_MAX = 50;
+
+function appendWakeLog(line, level = "info") {
+  if (!wakeLogEl) return;
+  const ts = new Date().toLocaleTimeString();
+  const entry = document.createElement("div");
+  entry.className = `wake-log-line wake-log-${level}`;
+  entry.textContent = `[${ts}] ${line}`;
+  wakeLogEl.prepend(entry);
+  while (wakeLogEl.children.length > WAKE_LOG_MAX) {
+    wakeLogEl.lastChild.remove();
+  }
+}
+
+function formatWakeEvent(data) {
+  const src = data.source === "listen_once"
+    ? " (listen once)"
+    : data.source === "local_mic"
+      ? " (local mic test)"
+      : "";
+  switch (data.status) {
+    case "started":
+      return { line: "Always-on listener started", level: "ok" };
+    case "stopped":
+      return { line: "Always-on listener stopped", level: "warn" };
+    case "simulated":
+      return { line: data.message || "Simulated robot — mic unavailable", level: "warn" };
+    case "capturing":
+      return {
+        line: `Capturing mic${data.duration ? ` (${data.duration}s)` : ""}${src}…`,
+        level: "info",
+      };
+    case "transcribing":
+      return {
+        line: `Transcribing${data.audio_bytes ? ` ${data.audio_bytes} bytes` : ""}${src}…`,
+        level: "info",
+      };
+    case "no_audio":
+      return { line: `No audio from mic${src}`, level: "warn" };
+    case "silent":
+      return {
+        line: `Whisper returned empty${data.audio_bytes ? ` (${data.audio_bytes} bytes captured)` : ""}${src}`,
+        level: "warn",
+      };
+    case "heard":
+      return { line: `Heard: "${data.heard}"${src}`, level: "info" };
+    case "ignored":
+      return {
+        line: `No wake phrase — "${data.heard}" (${data.reason || "no match"})${src}`,
+        level: "warn",
+      };
+    case "triggered":
+      return {
+        line: `Wake OK → command: "${data.command}" (from "${data.heard}")${src}`,
+        level: "ok",
+      };
+    case "thinking":
+      return { line: `Sending to LLM: "${data.command}"`, level: "info" };
+    case "replied":
+      return {
+        line: `LLM reply: ${data.reply || "(empty)"}${src}`,
+        level: "ok",
+      };
+    default:
+      return data.message
+        ? { line: `${data.status}: ${data.message}`, level: "info" }
+        : null;
+  }
+}
+
+function handleWakeEvent(data) {
+  const formatted = formatWakeEvent(data);
+  if (formatted) appendWakeLog(formatted.line, formatted.level);
+
+  if (data.status === "triggered" && data.command) {
+    agentReplyEl.textContent = `Heard: "${data.heard}" → "${data.command}"`;
+  }
+  if (data.status === "replied" && data.reply) {
+    agentReplyEl.textContent = `Command: "${data.command}" — ${data.reply}`;
+  }
+  if (wakeStatusEl) {
+    const base = wakeBtn && wakeBtn.getAttribute("aria-pressed") === "true"
+      ? 'Listening for "Hi Loomo"'
+      : "";
+    const detail = data.heard && data.status === "heard"
+      ? `last: "${data.heard}"`
+      : data.status;
+    wakeStatusEl.textContent = base && detail ? `${base} · ${detail}` : base || detail || "";
+  }
 }
 
 function updateWakeUi(running, statusText = "") {
@@ -178,6 +275,7 @@ if (wakeBtn) {
         body: JSON.stringify({ enabled: next }),
       });
       updateWakeUi(next, next ? 'Listening for "Hi Loomo"…' : "Wake listener stopped.");
+      appendWakeLog(next ? "Always-on listener enabled" : "Always-on listener disabled", next ? "ok" : "warn");
     } catch (error) {
       agentReplyEl.textContent = error.message;
     } finally {
@@ -199,18 +297,7 @@ function connect() {
     const data = JSON.parse(event.data);
     if (data.type === "navigation_update") applyUpdate(data);
     if (data.type === "wake_listener") {
-      if (data.status === "triggered" && data.command) {
-        agentReplyEl.textContent = `Heard: "${data.heard}" → "${data.command}"`;
-      }
-      if (data.status === "replied" && data.reply) {
-        agentReplyEl.textContent = `Command: "${data.command}" — ${data.reply}`;
-      }
-      if (wakeStatusEl) {
-        const base = wakeBtn && wakeBtn.getAttribute("aria-pressed") === "true"
-          ? 'Listening for "Hi Loomo"'
-          : "";
-        wakeStatusEl.textContent = base && data.status ? `${base} · ${data.status}` : base;
-      }
+      handleWakeEvent(data);
     }
   };
 }

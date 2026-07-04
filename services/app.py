@@ -12,7 +12,7 @@ from pathlib import Path
 
 import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -31,7 +31,7 @@ from core.robot_agent import DirectRobotAgent
 from core import robot_profiles
 from core.voice_agent import VoiceAgent
 from core.wake_listener import WakeListener
-from core.wake_word import extract_wake_command
+from core.wake_word import extract_wake_command, set_wake_phrases, wake_phrases
 from core.auth import setup_auth, user_from_websocket
 
 logging.basicConfig(level=logging.INFO)
@@ -118,6 +118,13 @@ async def broadcast(payload: dict) -> None:
             dead.append(ws)
     for ws in dead:
         _ws_clients.discard(ws)
+
+
+async def _wake_debug(status: str, **fields) -> None:
+    """Log wake-word pipeline steps to server logs and the dashboard."""
+    detail = " ".join(f"{k}={v!r}" for k, v in fields.items() if v not in (None, ""))
+    logger.info("Wake [%s]%s", status, f" {detail}" if detail else "")
+    await broadcast({"type": "wake_listener", "status": status, **fields})
 
 
 def _parse_manual_commands(
@@ -345,12 +352,13 @@ async def lifespan(app: FastAPI):
         return await voice_agent.handle(command)
 
     wake_cfg = settings.get("wake_word") or {}
+    set_wake_phrases(wake_cfg.get("phrases"))
     wake_listener = WakeListener(
         robot_client,
         on_command=_wake_on_command,
         on_event=broadcast,
         poll_interval_sec=float(wake_cfg.get("poll_interval_sec", 0.4)),
-        capture_duration_sec=float(wake_cfg.get("capture_duration_sec", 2.0)),
+        capture_duration_sec=float(wake_cfg.get("capture_duration_sec", 5.0)),
         cooldown_sec=float(wake_cfg.get("cooldown_sec", 3.0)),
     )
     if _as_bool(wake_cfg.get("auto_start", False)) and not _as_bool(robot_cfg.get("simulated", True)):
@@ -741,34 +749,154 @@ async def api_agent_listen(body: AgentListenRequest):
             detail="Voice listen requires ROBOT_SIMULATED=false. Use /api/agent/chat for text.",
         )
 
+    await _wake_debug("capturing", duration=body.duration, source="listen_once")
     wav = await robot_client.capture_audio(body.duration)
     if not wav:
+        await _wake_debug("no_audio", source="listen_once")
         return {"ok": False, "heard": "", "reply": "I did not hear anything."}
 
     from core.api_client import transcribe_audio
 
+    await _wake_debug("transcribing", audio_bytes=len(wav), source="listen_once")
     heard = await asyncio.get_event_loop().run_in_executor(None, transcribe_audio, wav)
     heard = (heard or "").strip()
     if not heard:
+        await _wake_debug("silent", audio_bytes=len(wav), source="listen_once")
         return {"ok": False, "heard": "", "reply": "I did not hear anything."}
+
+    await _wake_debug("heard", heard=heard, source="listen_once")
 
     command = heard
     wake_reason = ""
     if body.require_wake_word:
         command, wake_reason = extract_wake_command(heard)
         if command is None:
+            await _wake_debug(
+                "ignored",
+                heard=heard,
+                reason=wake_reason,
+                source="listen_once",
+            )
             return {
                 "ok": True,
                 "heard": heard,
                 "reply": f'Say "Hi Loomo" first — e.g. "Hi Loomo, take me to the station". ({wake_reason})',
                 "wake_triggered": False,
+                "wake_reason": wake_reason,
             }
+
+    await _wake_debug(
+        "triggered",
+        heard=heard,
+        command=command,
+        source="listen_once",
+    )
 
     if body.force_route and body.route_text and body.route_text.strip():
         result = await _start_forced_route(body.route_text, user_message=command)
+        await _wake_debug(
+            "replied",
+            heard=heard,
+            command=command,
+            reply=result.get("reply", ""),
+            source="listen_once",
+        )
         return {"ok": True, "heard": heard, "command": command, "wake_triggered": True, **result}
     result = await voice_agent.handle(command)
+    await _wake_debug(
+        "replied",
+        heard=heard,
+        command=command,
+        reply=result.get("reply", ""),
+        source="listen_once",
+    )
     return {"ok": True, "command": command, "wake_triggered": True, **result}
+
+
+async def _process_local_mic_upload(
+    audio_bytes: bytes,
+    filename: str,
+    *,
+    require_wake_word: bool,
+    run_agent: bool,
+) -> dict:
+    """Transcribe browser mic audio and optionally run Hi Loomo wake + agent."""
+    if not audio_bytes:
+        await _wake_debug("no_audio", source="local_mic")
+        return {"ok": False, "heard": "", "reply": "No audio uploaded.", "source": "local_mic"}
+
+    from core.api_client import transcribe_audio
+
+    await _wake_debug("transcribing", audio_bytes=len(audio_bytes), source="local_mic")
+    heard = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: transcribe_audio(audio_bytes, filename=filename),
+    )
+    heard = (heard or "").strip()
+    if not heard:
+        await _wake_debug("silent", audio_bytes=len(audio_bytes), source="local_mic")
+        return {
+            "ok": False,
+            "heard": "",
+            "reply": "Whisper returned empty.",
+            "source": "local_mic",
+        }
+
+    await _wake_debug("heard", heard=heard, source="local_mic")
+
+    if not require_wake_word:
+        result = {"ok": True, "heard": heard, "source": "local_mic", "wake_triggered": None}
+        if run_agent:
+            if voice_agent is None:
+                raise HTTPException(status_code=503, detail="Voice agent not ready")
+            agent_result = await voice_agent.handle(heard)
+            result.update(agent_result)
+            result["wake_triggered"] = True
+            result["command"] = heard
+        return result
+
+    command, wake_reason = extract_wake_command(heard)
+    if command is None:
+        await _wake_debug("ignored", heard=heard, reason=wake_reason, source="local_mic")
+        return {
+            "ok": True,
+            "heard": heard,
+            "reply": f'Say "Hi Loomo" first — e.g. "Hi Loomo, take me to the station". ({wake_reason})',
+            "wake_triggered": False,
+            "wake_reason": wake_reason,
+            "source": "local_mic",
+        }
+
+    await _wake_debug("triggered", heard=heard, command=command, source="local_mic")
+
+    if not run_agent:
+        return {
+            "ok": True,
+            "heard": heard,
+            "command": command,
+            "wake_triggered": True,
+            "reply": f'Wake phrase OK — command: "{command}"',
+            "source": "local_mic",
+        }
+
+    if voice_agent is None:
+        raise HTTPException(status_code=503, detail="Voice agent not ready")
+    agent_result = await voice_agent.handle(command)
+    await _wake_debug(
+        "replied",
+        heard=heard,
+        command=command,
+        reply=agent_result.get("reply", ""),
+        source="local_mic",
+    )
+    return {
+        "ok": True,
+        "heard": heard,
+        "command": command,
+        "wake_triggered": True,
+        "source": "local_mic",
+        **agent_result,
+    }
 
 
 @app.get("/api/agent/wake")
@@ -786,7 +914,8 @@ def api_agent_wake_status():
         "triggers": state.triggers,
         "ignored": state.ignored,
         "errors": state.errors,
-        "phrase": "hi loomo",
+        "phrase": wake_phrases()[0] if wake_phrases() else "hi loomo",
+        "phrases": list(wake_phrases()),
     }
 
 
@@ -812,6 +941,7 @@ def api_test_info():
         "modes": {
             "speak": f"POST /api/test/speak — Loomo POST {LOOMO_CMD_PATH} speak",
             "listen": "POST /api/test/listen — robot mic → Whisper",
+            "local_mic": "POST /api/test/local-mic — your computer mic → Whisper (test only)",
             "echo": f"POST /api/test/echo — mic → Whisper → {LOOMO_CMD_PATH} speak",
             "move": f"POST /api/test/move — short nudge ({', '.join(VALID_DIRECTIONS)})",
             "patrol": "POST /api/test/patrol — small in-room loop (4 nudges)",
@@ -839,6 +969,23 @@ async def api_test_speak(body: TestSpeakRequest):
 async def api_test_listen(body: TestListenRequest):
     result = await _audio_tester().test_listen(body.duration)
     return _test_response(result)
+
+
+@app.post("/api/test/local-mic")
+async def api_test_local_mic(
+    audio: UploadFile = File(...),
+    require_wake_word: bool = Form(default=True),
+    run_agent: bool = Form(default=False),
+):
+    """Test Whisper + Hi Loomo using audio recorded in the browser (no robot mic)."""
+    audio_bytes = await audio.read()
+    filename = audio.filename or "local-mic.webm"
+    return await _process_local_mic_upload(
+        audio_bytes,
+        filename,
+        require_wake_word=require_wake_word,
+        run_agent=run_agent,
+    )
 
 
 @app.post("/api/test/echo")
